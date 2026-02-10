@@ -470,7 +470,7 @@ By continuing, you agree to our terms and privacy policy.
         console.print(Panel("[bold green]Setup Completed Successfully![/bold green]", style="green"))
 
         # Quick start guide
-        guide = """
+        guide = f"""
 [bold]Quick Start Guide:[/bold]
 
 1. Test your installation:
@@ -487,11 +487,10 @@ By continuing, you agree to our terms and privacy policy.
 4. Check for updates:
    [cyan]python3 setup.py --update[/cyan]
 
-f"""
 [bold]Support:[/bold]
-• Documentation: {GITHUB_REPO}
-• Email: {SUPPORT_EMAIL}
-• Privacy: {PRIVACY_POLICY}
+- Documentation: {GITHUB_REPO}
+- Email: {SUPPORT_EMAIL}
+- Privacy: {PRIVACY_POLICY}
 """
         console.print(guide)
 
