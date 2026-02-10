@@ -2,6 +2,9 @@
 
 A robust command-line interface for analyzing Indicators of Compromise (IOCs) including IPs, domains, hashes, URLs, and CVEs using multiple threat intelligence sources.
 
+<img width="2127" height="723" alt="image" src="https://github.com/user-attachments/assets/fd784e35-ada8-41e7-95ae-66363ed2515b" />
+
+
 **Support:** support@byfranke.com 
 
 ## Installation
