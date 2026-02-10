@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Analyze-CLI Interactive Setup Wizard
-Copyright (c) 2026 ByFranke Security Solutions
+Copyright (c) 2026 ByFranke - Security Solutions
 """
 
 import os
