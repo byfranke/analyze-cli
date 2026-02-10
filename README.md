@@ -2,9 +2,24 @@
 
 A robust command-line interface for analyzing Indicators of Compromise (IOCs) including IPs, domains, hashes, URLs, and CVEs using multiple threat intelligence sources.
 
+
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=-NZARpdcJKk">
+    <img src="https://img.youtube.com/vi/NZARpdcJKk/maxresdefault.jpg" alt="Analyze-CLI — Quick Summary" width="600">
+  </a>
+</p>
+
+<p align="center">
+  <strong>Advanced Incident Hunting | Enterprise Threat Detection</strong><br>
+  Version 2.1 | byFranke 2026
+</p>
+
+---
+
+
 <img width="2127" height="723" alt="image" src="https://github.com/user-attachments/assets/fd784e35-ada8-41e7-95ae-66363ed2515b" />
 
-
+---
 
 **About more:** https://sheep.byfranke.com/pages/analyze.html
 
