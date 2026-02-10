@@ -1,6 +1,6 @@
 #!/bin/bash
 # Analyze-CLI Quick Installation Script
-# Copyright (c) 2026 ByFranke - Security Solutions
+# Copyright (c) 2026 byFranke - Security Solutions
 
 echo "================================="
 echo "  Analyze-CLI Installation"

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Analyze-CLI Interactive Setup Wizard
-Copyright (c) 2026 ByFranke - Security Solutions
+Copyright (c) 2026 byFranke - Security Solutions
 """
 
 import os
@@ -218,7 +218,7 @@ class AnalyzeSetup:
 • Privacy Policy: {PRIVACY_POLICY}
 • Terms of Service: {TERMS_OF_SERVICE}
 • Support: {SUPPORT_EMAIL}
-• License: MIT License (see LICENSE file)
+• License: byFranke License (see LICENSE file)
 
 By continuing, you agree to our terms and privacy policy.
         """

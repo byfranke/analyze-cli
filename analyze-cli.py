@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Analyze-CLI: IOC Analysis Tool
-Copyright (c) 2026 ByFranke - Security Solutions
+Copyright (c) 2026 byFranke - Security Solutions
 GitHub: https://github.com/byfranke/analyze-cli
 
 A robust command-line interface for analyzing Indicators of Compromise (IOCs)
@@ -393,7 +393,7 @@ Support:
   Privacy Policy: {PRIVACY_POLICY}
   Email: {SUPPORT_EMAIL}
 
-Copyright (c) 2026 ByFranke Security Solutions
+Copyright (c) 2026 byFranke - Security Solutions
         """
     )
 
@@ -470,8 +470,8 @@ Copyright (c) 2026 ByFranke Security Solutions
 [bold cyan]Analyze-CLI v{VERSION}[/bold cyan]
 IOC Analysis & Threat Intelligence Tool
 
-[bold]Copyright:[/bold] © 2026 ByFranke Security Solutions
-[bold]License:[/bold] MIT License
+[bold]Copyright:[/bold] © 2026 byFranke - Security Solutions
+[bold]License:[/bold] byFranke License
 [bold]GitHub:[/bold] {GITHUB_REPO}
 [bold]Privacy Policy:[/bold] {PRIVACY_POLICY}
 [bold]Support:[/bold] {SUPPORT_EMAIL}
