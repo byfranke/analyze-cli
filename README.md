@@ -5,7 +5,8 @@ A robust command-line interface for analyzing Indicators of Compromise (IOCs) in
 <img width="2127" height="723" alt="image" src="https://github.com/user-attachments/assets/fd784e35-ada8-41e7-95ae-66363ed2515b" />
 
 
-**Support:** support@byfranke.com 
+
+**About more:** https://sheep.byfranke.com/pages/analyze.html
 
 ## Installation
 
@@ -50,7 +51,7 @@ python3 setup.py
 ```
 
 The setup will:
-- Ask for your API token
+- Ask for your [API token](https://sheep.byfranke.com/discord)
 - Set a master password for encryption
 - Store your token encrypted in `~/.analyze-cli/config.ini`
 - Require the master password each time you use the CLI
