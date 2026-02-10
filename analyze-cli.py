@@ -1,0 +1,535 @@
+#!/usr/bin/env python3
+"""
+Analyze-CLI: IOC Analysis Tool
+Copyright (c) 2026 ByFranke - Security Solutions
+GitHub: https://github.com/byfranke/analyze-cli
+
+A robust command-line interface for analyzing Indicators of Compromise (IOCs)
+including IPs, domains, hashes, URLs, and CVEs using multiple threat intelligence sources.
+"""
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Dict, Any, Optional
+import requests
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.json import JSON
+from rich.progress import Progress, SpinnerColumn, TextColumn
+import configparser
+from urllib.parse import urlparse
+import re
+from getpass import getpass
+import base64
+
+try:
+    from cryptography.fernet import Fernet
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    import keyring
+    ENCRYPTION_AVAILABLE = True
+except ImportError:
+    ENCRYPTION_AVAILABLE = False
+
+# Constants
+VERSION = "1.0.0"
+DEFAULT_API_URL = "https://sheep.byfranke.com/api/ai/analyze"
+DEFAULT_CONFIG_FILE = "~/.analyze-cli/config.ini"
+DEFAULT_TIMEOUT = 30
+GITHUB_REPO = "https://github.com/byfranke/analyze-cli"
+PRIVACY_POLICY = "https://sheep.byfranke.com/pages/privacy.html"
+SUPPORT_EMAIL = "support@byfranke.com"
+
+# Initialize Rich console for beautiful output
+console = Console()
+
+
+class IOCAnalyzer:
+    """Client for the IOC analysis API"""
+
+    def __init__(self, api_token: Optional[str] = None, api_url: Optional[str] = None):
+        """
+        Initialize the IOC Analyzer client.
+
+        Args:
+            api_token: API authentication token
+            api_url: Base URL for the API endpoint
+        """
+        self.api_token = api_token or self._load_token()
+        self.api_url = api_url or DEFAULT_API_URL
+
+        if not self.api_token:
+            raise ValueError(
+                "API token is required. Configure it via:\n"
+                "  1. Run: python3 setup.py to configure encrypted token\n"
+                "  2. Use --token argument for one-time use\n\n"
+                f"Support: {SUPPORT_EMAIL}\n"
+                f"Documentation: {GITHUB_REPO}"
+            )
+
+    def _decrypt_token(self, encrypted_token: str, password: str) -> Optional[str]:
+        """Decrypt token with password"""
+        if not ENCRYPTION_AVAILABLE:
+            console.print("[yellow]Warning: Encryption libraries not available[/yellow]")
+            return None
+
+        try:
+            salt = b'analyze-cli-salt-2026'
+            kdf = PBKDF2HMAC(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=salt,
+                iterations=100000,
+            )
+            key = base64.urlsafe_b64encode(kdf.derive(password.encode()))
+            f = Fernet(key)
+            encrypted = base64.b64decode(encrypted_token.encode())
+            decrypted = f.decrypt(encrypted)
+            return decrypted.decode()
+        except Exception:
+            return None
+
+    def _load_token(self) -> Optional[str]:
+        """Load API token from various sources"""
+        # 1. Check environment variable first
+        token = os.environ.get("ANALYZE_API_TOKEN")
+        if token:
+            return token
+
+        # 2. Try system keyring
+        if ENCRYPTION_AVAILABLE:
+            try:
+                token = keyring.get_password("analyze-cli", "api_token")
+                if token:
+                    return token
+            except Exception:
+                pass
+
+        # 3. Check config file
+        config_path = Path(DEFAULT_CONFIG_FILE).expanduser()
+        if config_path.exists():
+            config = configparser.ConfigParser()
+            config.read(config_path)
+
+            if "api" in config:
+                # Check for encrypted token
+                if config["api"].get("encryption_enabled") == "true" and "encrypted_token" in config["api"]:
+                    encrypted_token = config["api"]["encrypted_token"]
+                    console.print("[yellow]Token is encrypted. Enter your master password:[/yellow]")
+
+                    for attempt in range(3):
+                        password = getpass("Master Password: ")
+                        token = self._decrypt_token(encrypted_token, password)
+                        if token:
+                            return token
+                        console.print(f"[red]Invalid password. {2-attempt} attempts remaining.[/red]")
+
+                    console.print("[red]Failed to decrypt token after 3 attempts[/red]")
+                    return None
+
+                # Check for plain token (legacy)
+                if "token" in config["api"]:
+                    return config["api"]["token"]
+
+        return None
+
+    def detect_ioc_type(self, target: str) -> str:
+        """
+        Automatically detect the type of IOC.
+
+        Args:
+            target: The IOC to analyze
+
+        Returns:
+            The detected IOC type
+        """
+        # IP address pattern (IPv4)
+        ip_pattern = r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
+
+        # Hash patterns
+        md5_pattern = r'^[a-fA-F0-9]{32}$'
+        sha1_pattern = r'^[a-fA-F0-9]{40}$'
+        sha256_pattern = r'^[a-fA-F0-9]{64}$'
+
+        # CVE pattern
+        cve_pattern = r'^CVE-\d{4}-\d{4,}$'
+
+        # Check for URL
+        if target.startswith(('http://', 'https://')):
+            return 'url'
+
+        # Check for IP
+        if re.match(ip_pattern, target):
+            return 'ip'
+
+        # Check for hashes
+        if re.match(md5_pattern, target):
+            return 'hash'
+        if re.match(sha1_pattern, target):
+            return 'hash'
+        if re.match(sha256_pattern, target):
+            return 'hash'
+
+        # Check for CVE
+        if re.match(cve_pattern, target.upper()):
+            return 'cve'
+
+        # Check for domain (basic check)
+        if '.' in target and not ' ' in target and len(target) < 255:
+            # More sophisticated domain check
+            domain_pattern = r'^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
+            if re.match(domain_pattern, target):
+                return 'domain'
+
+        # Default to domain if unclear
+        return 'domain'
+
+    def analyze(self, target: str, ioc_type: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Analyze an IOC using the API.
+
+        Args:
+            target: The IOC to analyze
+            ioc_type: Type of IOC (auto-detected if not provided)
+
+        Returns:
+            Analysis results from the API
+        """
+        if not ioc_type:
+            ioc_type = self.detect_ioc_type(target)
+            console.print(f"[cyan]Auto-detected IOC type: {ioc_type}[/cyan]")
+
+        headers = {
+            "X-API-Token": self.api_token,
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "target": target,
+            "type": ioc_type
+        }
+
+        try:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+                transient=True
+            ) as progress:
+                task = progress.add_task(f"Analyzing {ioc_type}: {target}", total=None)
+
+                response = requests.post(
+                    self.api_url,
+                    headers=headers,
+                    json=payload,
+                    timeout=DEFAULT_TIMEOUT
+                )
+
+                progress.update(task, completed=True)
+
+            response.raise_for_status()
+            return response.json()
+
+        except requests.exceptions.Timeout:
+            console.print("[red]Error: Request timed out[/red]")
+            sys.exit(1)
+        except requests.exceptions.ConnectionError:
+            console.print("[red]Error: Failed to connect to API server[/red]")
+            sys.exit(1)
+        except requests.exceptions.HTTPError as e:
+            if response.status_code == 401:
+                console.print("[red]Error: Invalid API token[/red]")
+            elif response.status_code == 400:
+                console.print(f"[red]Error: Invalid request - {response.text}[/red]")
+            else:
+                console.print(f"[red]Error: HTTP {response.status_code} - {response.text}[/red]")
+            sys.exit(1)
+        except requests.exceptions.RequestException as e:
+            console.print(f"[red]Error: {str(e)}[/red]")
+            sys.exit(1)
+
+
+def display_results(results: Dict[str, Any], output_format: str = "pretty"):
+    """
+    Display analysis results in the specified format.
+
+    Args:
+        results: Analysis results from the API
+        output_format: Output format (pretty, json, table)
+    """
+    if output_format == "json":
+        console.print_json(json.dumps(results, indent=2))
+    elif output_format == "pretty":
+        # Create a beautiful display of the results
+        if "error" in results and results["error"] is not None:
+            console.print(Panel(f"[red]{results['error']}[/red]", title="Error", border_style="red"))
+            return
+
+        # Main result panel
+        title = f"IOC Analysis Results"
+        if "target" in results:
+            title = f"Analysis: {results['target']}"
+
+        # Display analysis result
+        if "analysis" in results:
+            console.print(Panel(results["analysis"], title=title, border_style="green"))
+        elif "summary" in results:
+            console.print(Panel(results["summary"], title=title, border_style="green"))
+
+        # Display threat intelligence sources
+        if "sources" in results:
+            table = Table(title="Threat Intelligence Sources", show_header=True, header_style="bold cyan")
+            table.add_column("Source", style="cyan", width=20)
+            table.add_column("Status", width=15)
+            table.add_column("Details", style="white")
+
+            for source, data in results["sources"].items():
+                if isinstance(data, dict):
+                    status = data.get("status", "Unknown")
+                    details = data.get("details", "N/A")
+
+                    # Color code the status
+                    if "malicious" in str(status).lower():
+                        status = f"[red]{status}[/red]"
+                    elif "clean" in str(status).lower():
+                        status = f"[green]{status}[/green]"
+                    else:
+                        status = f"[yellow]{status}[/yellow]"
+
+                    table.add_row(source, status, str(details)[:80])
+
+            console.print(table)
+
+        # Display raw data if available
+        if "raw_data" in results:
+            console.print("\n[bold cyan]Raw Data:[/bold cyan]")
+            console.print(JSON(json.dumps(results["raw_data"], indent=2)))
+
+    elif output_format == "table":
+        # Simple table format
+        table = Table(show_header=True, header_style="bold cyan")
+        table.add_column("Field", style="cyan")
+        table.add_column("Value")
+
+        def flatten_dict(d, parent_key=''):
+            items = []
+            for k, v in d.items():
+                new_key = f"{parent_key}.{k}" if parent_key else k
+                if isinstance(v, dict):
+                    items.extend(flatten_dict(v, new_key))
+                else:
+                    items.append((new_key, str(v)))
+            return items
+
+        for key, value in flatten_dict(results):
+            table.add_row(key, value[:100])  # Truncate long values
+
+        console.print(table)
+
+
+def init_config():
+    """Initialize configuration file with example settings"""
+    config_dir = Path(DEFAULT_CONFIG_FILE).expanduser().parent
+    config_dir.mkdir(parents=True, exist_ok=True)
+
+    config_path = Path(DEFAULT_CONFIG_FILE).expanduser()
+
+    if config_path.exists():
+        console.print(f"[yellow]Configuration file already exists at {config_path}[/yellow]")
+        overwrite = console.input("Do you want to overwrite it? (y/N): ")
+        if overwrite.lower() != 'y':
+            return
+
+    config = configparser.ConfigParser()
+    config['api'] = {
+        'token': 'YOUR_API_TOKEN_HERE',
+        'url': DEFAULT_API_URL
+    }
+
+    config['defaults'] = {
+        'output_format': 'pretty',
+        'auto_detect_type': 'true'
+    }
+
+    with open(config_path, 'w') as f:
+        config.write(f)
+
+    console.print(f"[green]Configuration file created at {config_path}[/green]")
+    console.print("[yellow]Please edit the file and add your API token[/yellow]")
+
+
+def check_for_updates():
+    """Check for updates from GitHub"""
+    console.print("[bold cyan]Checking for updates...[/bold cyan]")
+    console.print(f"Current version: {VERSION}")
+    console.print(f"\nFor updates, visit: {GITHUB_REPO}")
+    console.print("To update, run: [cyan]python3 setup.py --update[/cyan]")
+
+
+def main():
+    """Main entry point for the CLI"""
+    parser = argparse.ArgumentParser(
+        description="Analyze IOCs (IPs, domains, hashes, URLs, CVEs) using multiple threat intelligence sources",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=f"""
+Examples:
+  %(prog)s 185.220.101.45                    # Auto-detect and analyze IP
+  %(prog)s malware.exe --type hash           # Analyze file hash
+  %(prog)s example.com --type domain         # Analyze domain
+  %(prog)s CVE-2021-44228                    # Analyze CVE
+  %(prog)s https://suspicious.site/page      # Analyze URL
+
+Setup & Configuration:
+  python3 setup.py                           # Run interactive setup wizard
+  %(prog)s --init                            # Quick config file creation
+  %(prog)s --update                          # Check for updates
+
+Support:
+  Documentation: {GITHUB_REPO}
+  Privacy Policy: {PRIVACY_POLICY}
+  Email: {SUPPORT_EMAIL}
+
+Copyright (c) 2026 ByFranke Security Solutions
+        """
+    )
+
+    parser.add_argument(
+        "target",
+        nargs="?",
+        help="The IOC to analyze (IP, domain, hash, URL, or CVE)"
+    )
+
+    parser.add_argument(
+        "-t", "--type",
+        choices=["ip", "domain", "hash", "url", "cve"],
+        help="Specify the IOC type (auto-detected if not provided)"
+    )
+
+    parser.add_argument(
+        "--token",
+        help="API authentication token"
+    )
+
+    parser.add_argument(
+        "--api-url",
+        help=f"API endpoint URL (default: {DEFAULT_API_URL})"
+    )
+
+    parser.add_argument(
+        "-o", "--output",
+        choices=["pretty", "json", "table"],
+        default="pretty",
+        help="Output format (default: pretty)"
+    )
+
+    parser.add_argument(
+        "--init",
+        action="store_true",
+        help="Initialize configuration file"
+    )
+
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Check for updates from GitHub"
+    )
+
+    parser.add_argument(
+        "--setup",
+        action="store_true",
+        help="Run interactive setup wizard"
+    )
+
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Enable verbose output"
+    )
+
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {VERSION}"
+    )
+
+    parser.add_argument(
+        "--about",
+        action="store_true",
+        help="Show about information and legal notices"
+    )
+
+    args = parser.parse_args()
+
+    # Handle about information
+    if args.about:
+        about_info = f"""
+[bold cyan]Analyze-CLI v{VERSION}[/bold cyan]
+IOC Analysis & Threat Intelligence Tool
+
+[bold]Copyright:[/bold] © 2026 ByFranke Security Solutions
+[bold]License:[/bold] MIT License
+[bold]GitHub:[/bold] {GITHUB_REPO}
+[bold]Privacy Policy:[/bold] {PRIVACY_POLICY}
+[bold]Support:[/bold] {SUPPORT_EMAIL}
+
+[bold]Credits:[/bold]
+Integrates with multiple threat intelligence sources:
+• VirusTotal
+• AbuseIPDB
+• Shodan
+• URLScan
+• And more...
+        """
+        console.print(Panel(about_info, title="About Analyze-CLI", style="cyan"))
+        return
+
+    # Handle setup wizard
+    if args.setup:
+        console.print("[cyan]Launching setup wizard...[/cyan]")
+        os.system("python3 setup.py")
+        return
+
+    # Handle updates
+    if args.update:
+        check_for_updates()
+        return
+
+    # Handle configuration initialization
+    if args.init:
+        init_config()
+        return
+
+    # Require target if not initializing
+    if not args.target:
+        parser.error("Target IOC is required (use --help for options)")
+
+    try:
+        # Initialize analyzer
+        analyzer = IOCAnalyzer(api_token=args.token, api_url=args.api_url)
+
+        # Perform analysis
+        results = analyzer.analyze(args.target, args.type)
+
+        # Display results
+        display_results(results, args.output)
+
+    except ValueError as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Analysis cancelled by user[/yellow]")
+        sys.exit(0)
+    except Exception as e:
+        if args.verbose:
+            console.print_exception()
+        else:
+            console.print(f"[red]Unexpected error: {str(e)}[/red]")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
