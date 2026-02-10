@@ -26,7 +26,8 @@ cd analyze-cli
 chmod +x analyze-cli.py setup.py install.sh
 bash install.sh
 python3 setup.py
-
+```
+```
 # Or install manually
 pip install -r requirements.txt
 
